@@ -1,0 +1,25 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: build
+        run: cmake --build build --parallel
+
+      - name: run demo (smoke test)
+        run: |
+          cd build
+          ./cheatui_demo
+          ./cheatui_getting_started

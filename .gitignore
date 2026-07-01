@@ -1,0 +1,11 @@
+build/
+out/
+*.o
+*.obj
+*.exe
+*.raw
+.vs/
+.vscode/
+CMakeUserPresets.json
+compile_commands.json
+.DS_Store
