@@ -2,36 +2,64 @@
 
 A small, dependency-free C++17 UI library for building themed overlay-style
 menus: draggable window, tabbed sidebar with an animated selection bar,
-smooth hover/toggle/fade animations everywhere, and a save/load config
-system. No third-party libraries required.
+glowing accents, soft bevel gradients, anti-aliased shapes, and a save/load
+config system. No third-party libraries required.
 
 ![menu preview](preview/frame_00_initial.png)
 
 It's renderer-agnostic. All drawing goes through a small `IRenderer`
 interface, so you plug it into whatever you're already drawing with (D3D,
 OpenGL, GDI, an existing ImGui draw list, whatever) and every widget,
-animation, and the config system works as-is. A CPU software renderer
-(`Canvas`) ships with the library so the examples build and run with zero
-setup, including headless.
+animation, glow/bevel effect, and the config system works as-is. A CPU
+software renderer (`Canvas`) ships with the library so the examples build
+and run with zero setup, including headless - shapes are anti-aliased with
+real sub-pixel coverage, not just hard-edged pixels.
 
 New here? Read **[TUTORIAL.md](TUTORIAL.md)** for a full walkthrough. This
 README covers the shape of the project and how to get it building.
 
 ## Widgets
 
-- **Checkbox** - on/off switch with a sliding pill
-- **Slider** - drag to pick a value from a range, with an optional step and unit suffix
+- **Checkbox** - on/off switch with a sliding, glowing pill
+- **Slider** - drag to pick a value from a range, with a gradient fill and glowing thumb
 - **Stepper** - small integer count with -/+ buttons
-- **RadioGroup** - a few mutually exclusive options shown side by side
+- **RadioGroup** - a few mutually exclusive options, shown side by side with a sliding selector
 - **ComboBox** - dropdown list for longer option sets
 - **ColorPicker** - saturation/value square + hue strip
 - **Keybind** - click, then press a key to bind it
-- **Button** - plain action button
+- **Button** - action button with a hover glow
 - **Label** - section header
 
 Every widget shares the same shape (an id, `Update`, `Render`,
 `SaveTo`/`LoadFrom`), so adding a new one is a matter of writing one more
 small class - see the bottom of TUTORIAL.md.
+
+## Window chrome
+
+The title bar supports a built-in **minimize** button (collapses the menu
+down to just its title bar, animated), an opt-in **close** button (you
+decide what closing means - hide, quit, save-then-quit), and any number of
+**custom buttons** you add yourself (a pin, a settings gear, whatever).
+The whole window also fades and slides in/out smoothly instead of
+snapping when you show or hide it. See TUTORIAL.md section 7.
+
+## The modern look
+
+Three things work together to get away from a "pixel art" feel:
+
+- **Real anti-aliasing** - `Canvas` computes sub-pixel coverage on every
+  circle, rounded corner, and line instead of a hard inside/outside test,
+  so edges are smooth at any size or angle.
+- **Glow** - a soft halo behind active toggles, hovered buttons, the
+  selected tab, and the window border, built from a few translucent
+  layered shapes (`cui::style::Glow`).
+- **Bevel gradients** - panels and buttons use a subtle light-top,
+  dark-bottom gradient plus a hairline top highlight instead of a flat
+  fill (`cui::style::BeveledPanel`), which is what makes toggles, sliders,
+  and buttons read as slightly raised/glassy rather than flat rectangles.
+
+All three are controlled by `theme.glowStrength` and `theme.bevelStrength`
+- turn them down to 0 for a flatter look, or up for something punchier.
 
 ## Project layout
 
@@ -40,20 +68,21 @@ include/           every public header (this is what you copy into your project)
   cheatui.hpp         single include that pulls in the whole public API
   Color.hpp           RGBA color, HSV conversion, lerp
   Easing.hpp          easing curves used by the animation system
-  Animation.hpp       AnimatedFloat / AnimatedColor / HueCycler - the fade/slide primitives
+  Animation.hpp       AnimatedFloat / AnimatedColor / HueCycler / Oscillator - fade/slide/pulse primitives
   Renderer.hpp         IRenderer - implement this once per graphics backend
-  Theme.hpp             color palette + spacing, all in one struct
+  Style.hpp             Glow / BeveledPanel helpers, built only on IRenderer
+  Theme.hpp             color palette + spacing + glow/bevel strength, all in one struct
   Input.hpp              per-frame mouse/keyboard snapshot
   Config.hpp               typed key/value store with .cfg file I/O
   Widgets.hpp                 every widget class
   Tab.hpp                        a page of widgets
-  Menu.hpp                          the window itself
+  Menu.hpp                          the window itself (chrome buttons, tabs, fade in/out)
   Canvas.hpp                        reference CPU-rendered IRenderer implementation
   Font5x7.hpp                       bitmap font data used by Canvas
 src/                implementations for the headers above that need one
 examples/
   getting_started.cpp    the short walkthrough from TUTORIAL.md, runnable
-  demo.cpp                bigger 5-tab showcase exercising every widget
+  demo.cpp                bigger 5-tab showcase exercising every widget + window chrome
 tools/
   raw_to_png.py            converts Canvas's .raw frame dumps into real PNGs
 ```

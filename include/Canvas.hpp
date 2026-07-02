@@ -18,6 +18,8 @@ public:
 
     void FillRect(float x, float y, float w, float h, Color c) override;
     void FillRoundedRect(float x, float y, float w, float h, float radius, Color c) override;
+    void FillRoundedRectGradient(float x, float y, float w, float h, float radius,
+                                  Color top, Color bottom) override;
     void StrokeRect(float x, float y, float w, float h, Color c, float thickness) override;
     void FillCircle(float cx, float cy, float radius, Color c) override;
     void Line(float x0, float y0, float x1, float y1, Color c, float thickness) override;
@@ -38,6 +40,13 @@ public:
 
 private:
     void PlotBlend(int x, int y, Color c); // alpha-blends a single pixel, clip-aware
+    void PlotCoverage(int x, int y, Color c, float coverage); // same, with a soft edge multiplier
+
+    // Coverage (0..1) of a point against a rounded-rect's corner curve; 1.0
+    // everywhere except the last ~1px band around each rounded corner, where
+    // it fades out smoothly instead of stair-stepping. This one function is
+    // what takes the whole UI from "pixel art" to "soft edges everywhere".
+    static float RoundedRectCoverage(float lx, float ly, float w, float h, float r);
 
     int width_, height_;
     std::vector<uint8_t> pixels_; // RGB8, row-major

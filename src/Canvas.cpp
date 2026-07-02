@@ -6,6 +6,17 @@
 
 namespace cui {
 
+namespace {
+// How much a 1-pixel-wide strip [p, p+1) overlaps a [rangeStart, rangeEnd)
+// span. Used to fade a shape's straight edges in over their last fraction
+// of a pixel instead of snapping on/off - this alone removes most of the
+// "jagged pixel art" look from moving/animated bars and panels.
+float AxisCoverage(float pixelStart, float rangeStart, float rangeEnd) {
+    float overlap = std::min(pixelStart + 1.0f, rangeEnd) - std::max(pixelStart, rangeStart);
+    return std::clamp(overlap, 0.0f, 1.0f);
+}
+} // namespace
+
 Canvas::Canvas(int width, int height) : width_(width), height_(height) {
     pixels_.assign(static_cast<size_t>(width_) * height_ * 3, 0);
     clipStack_.push_back({0, 0, width_, height_});
@@ -56,14 +67,44 @@ void Canvas::PlotBlend(int x, int y, Color c) {
     pixels_[i + 2] = static_cast<uint8_t>(c.b * a + pixels_[i + 2] * (1.0f - a));
 }
 
+void Canvas::PlotCoverage(int x, int y, Color c, float coverage) {
+    if (coverage <= 0.0f) return;
+    if (coverage >= 1.0f) { PlotBlend(x, y, c); return; }
+    Color soft = c;
+    soft.a = static_cast<uint8_t>(std::clamp(c.a * coverage, 0.0f, 255.0f));
+    PlotBlend(x, y, soft);
+}
+
+float Canvas::RoundedRectCoverage(float lx, float ly, float w, float h, float r) {
+    float dx = 0.0f, dy = 0.0f;
+    bool inCorner = true;
+    if (lx < r && ly < r)            { dx = r - lx;       dy = r - ly; }
+    else if (lx > w - r && ly < r)   { dx = lx - (w - r);  dy = r - ly; }
+    else if (lx < r && ly > h - r)   { dx = r - lx;        dy = ly - (h - r); }
+    else if (lx > w - r && ly > h - r) { dx = lx - (w - r); dy = ly - (h - r); }
+    else inCorner = false;
+
+    if (!inCorner) return 1.0f;
+    float dist = std::sqrt(dx * dx + dy * dy);
+    // Fully opaque half a pixel inside the arc, fully transparent half a
+    // pixel outside it, smooth in between - a soft-edged corner instead of
+    // a staircase of square pixels.
+    return std::clamp(r - dist + 0.5f, 0.0f, 1.0f);
+}
+
 void Canvas::FillRect(float x, float y, float w, float h, Color c) {
     int x0 = static_cast<int>(std::floor(x));
     int y0 = static_cast<int>(std::floor(y));
     int x1 = static_cast<int>(std::ceil(x + w));
     int y1 = static_cast<int>(std::ceil(y + h));
-    for (int yy = y0; yy < y1; ++yy)
-        for (int xx = x0; xx < x1; ++xx)
-            PlotBlend(xx, yy, c);
+    for (int yy = y0; yy < y1; ++yy) {
+        float covY = AxisCoverage(static_cast<float>(yy), y, y + h);
+        if (covY <= 0.0f) continue;
+        for (int xx = x0; xx < x1; ++xx) {
+            float covX = AxisCoverage(static_cast<float>(xx), x, x + w);
+            PlotCoverage(xx, yy, c, covX * covY);
+        }
+    }
 }
 
 void Canvas::FillRoundedRect(float x, float y, float w, float h, float radius, Color c) {
@@ -72,26 +113,37 @@ void Canvas::FillRoundedRect(float x, float y, float w, float h, float radius, C
     int y0 = static_cast<int>(std::floor(y));
     int x1 = static_cast<int>(std::ceil(x + w));
     int y1 = static_cast<int>(std::ceil(y + h));
-    float r = radius;
     for (int yy = y0; yy < y1; ++yy) {
+        float py = yy + 0.5f;
+        float covY = AxisCoverage(static_cast<float>(yy), y, y + h);
+        if (covY <= 0.0f) continue;
         for (int xx = x0; xx < x1; ++xx) {
-            float lx = xx - x, ly = yy - y; // local coords within rect
-            bool inside = true;
-            // check the four rounded corners only; interior is a plain rect
-            if (lx < r && ly < r) {
-                float dx = r - lx, dy = r - ly;
-                inside = (dx * dx + dy * dy) <= r * r;
-            } else if (lx > w - r && ly < r) {
-                float dx = lx - (w - r), dy = r - ly;
-                inside = (dx * dx + dy * dy) <= r * r;
-            } else if (lx < r && ly > h - r) {
-                float dx = r - lx, dy = ly - (h - r);
-                inside = (dx * dx + dy * dy) <= r * r;
-            } else if (lx > w - r && ly > h - r) {
-                float dx = lx - (w - r), dy = ly - (h - r);
-                inside = (dx * dx + dy * dy) <= r * r;
-            }
-            if (inside) PlotBlend(xx, yy, c);
+            float px = xx + 0.5f;
+            float covX = AxisCoverage(static_cast<float>(xx), x, x + w);
+            float corner = RoundedRectCoverage(px - x, py - y, w, h, radius);
+            PlotCoverage(xx, yy, c, covX * covY * corner);
+        }
+    }
+}
+
+void Canvas::FillRoundedRectGradient(float x, float y, float w, float h, float radius,
+                                      Color top, Color bottom) {
+    radius = std::min(radius, std::min(w, h) * 0.5f);
+    int x0 = static_cast<int>(std::floor(x));
+    int y0 = static_cast<int>(std::floor(y));
+    int x1 = static_cast<int>(std::ceil(x + w));
+    int y1 = static_cast<int>(std::ceil(y + h));
+    for (int yy = y0; yy < y1; ++yy) {
+        float py = yy + 0.5f;
+        float covY = AxisCoverage(static_cast<float>(yy), y, y + h);
+        if (covY <= 0.0f) continue;
+        float t = h > 0.0f ? std::clamp((py - y) / h, 0.0f, 1.0f) : 0.0f;
+        Color rowColor = Color::Lerp(top, bottom, t);
+        for (int xx = x0; xx < x1; ++xx) {
+            float px = xx + 0.5f;
+            float covX = AxisCoverage(static_cast<float>(xx), x, x + w);
+            float corner = RoundedRectCoverage(px - x, py - y, w, h, radius);
+            PlotCoverage(xx, yy, rowColor, covX * covY * corner);
         }
     }
 }
@@ -108,11 +160,13 @@ void Canvas::FillCircle(float cx, float cy, float radius, Color c) {
     int y0 = static_cast<int>(std::floor(cy - radius));
     int x1 = static_cast<int>(std::ceil(cx + radius));
     int y1 = static_cast<int>(std::ceil(cy + radius));
-    float r2 = radius * radius;
     for (int yy = y0; yy <= y1; ++yy) {
+        float py = yy + 0.5f;
         for (int xx = x0; xx <= x1; ++xx) {
-            float dx = xx - cx, dy = yy - cy;
-            if (dx * dx + dy * dy <= r2) PlotBlend(xx, yy, c);
+            float px = xx + 0.5f;
+            float dist = std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+            float coverage = std::clamp(radius - dist + 0.5f, 0.0f, 1.0f);
+            PlotCoverage(xx, yy, c, coverage);
         }
     }
 }
@@ -131,6 +185,10 @@ void Canvas::Line(float x0, float y0, float x1, float y1, Color c, float thickne
 void Canvas::Text(float x, float y, const std::string& text, Color c, float scale) {
     const auto& table = font5x7::Table();
     float penX = x;
+    // Each "on" glyph pixel is drawn as a slightly rounded square rather
+    // than a hard square - it keeps the font readable at small sizes but
+    // reads as a soft rounded typeface instead of raw 90s pixel art.
+    float pixelRadius = scale * 0.3f;
     for (char ch : text) {
         char key = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
         auto it = table.find(key);
@@ -140,7 +198,7 @@ void Canvas::Text(float x, float y, const std::string& text, Color c, float scal
             uint8_t bits = glyph.rows[row];
             for (int col = 0; col < 5; ++col) {
                 if (bits & (1 << (4 - col))) {
-                    FillRect(penX + col * scale, y + row * scale, scale, scale, c);
+                    FillRoundedRect(penX + col * scale, y + row * scale, scale, scale, pixelRadius, c);
                 }
             }
         }

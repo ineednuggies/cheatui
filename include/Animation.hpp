@@ -111,4 +111,23 @@ private:
     float speed_;
 };
 
+// A gentle, endless sine wave in [0,1] - not chasing a target like
+// AnimatedFloat, just breathing. Used for the soft glow pulse on active
+// toggles and for slowly shimmering an accent gradient.
+class Oscillator {
+public:
+    explicit Oscillator(float cyclesPerSecond = 0.6f) : speed_(cyclesPerSecond) {}
+    float Update(float dt) {
+        phase_ += speed_ * dt * 6.2831853f; // 2*pi per full cycle
+        value_ = std::sin(phase_) * 0.5f + 0.5f;
+        return value_;
+    }
+    float Value() const { return value_; }
+
+private:
+    float phase_ = 0.0f;
+    float speed_;
+    float value_ = 0.5f;
+};
+
 } // namespace cui

@@ -14,6 +14,7 @@ struct Theme {
     Color textDim        = Color::FromHex(0x8A90A2, 255);
     Color accent         = Color::FromHex(0x7C5CFF, 255); // primary accent
     Color accentDim      = Color::FromHex(0x7C5CFF, 90);
+    Color accentSoft     = Color::FromHex(0x9B82FF, 255); // lighter end of the accent gradient
     Color toggleOff      = Color::FromHex(0x2A2F3F, 255);
     Color danger         = Color::FromHex(0xFF5C5C, 255);
     Color success        = Color::FromHex(0x4CD27A, 255);
@@ -23,6 +24,9 @@ struct Theme {
     float rowHeight      = 28.0f;
     float tabWidth       = 130.0f;
     float animDuration   = 0.16f; // seconds, used by most hover/click fades
+
+    float bevelStrength  = 0.10f; // 0 = flat fills, higher = more pronounced light-top/dark-bottom bevel
+    float glowStrength   = 0.55f; // 0 = no glow halo, 1 = strong glow on accented/active elements
 
     bool rainbowAccent   = false; // accent color hue-cycles instead of staying fixed
 };

@@ -31,6 +31,15 @@ int main() {
 
     Menu menu("CUI - Demo Menu", Rect{40, 30, 680, 400});
 
+    // Window chrome: minimize is on by default (click it to collapse the
+    // menu down to just its title bar). Close only appears once you give
+    // it something to do - here it just hides the menu, but it could just
+    // as easily quit the app, save state first, whatever you need.
+    bool appRunning = true;
+    menu.SetOnClose([&]() { menu.SetVisible(false); appRunning = false; });
+    menu.AddTitleBarButton("o", [&]() { std::cout << "[demo] pin button clicked\n"; });
+    (void)appRunning;
+
     Tab& general = menu.AddTab("General");
     general.Add<Label>("GENERAL");
     general.Add<Checkbox>("general.auto_save", "Auto-save config on exit", true);
@@ -149,6 +158,27 @@ int main() {
     }
     for (int i = 0; i < 30; ++i) menu.Update(in, dt); // step hue cycler
     renderFrame("frame_06_rainbow_accent");
+
+    // Hover the minimize button, then click it - shows the chrome button
+    // glow and the window collapsing down to just its title bar.
+    // Chrome buttons lay out right-to-left from the title bar's right edge:
+    // close (20px) is first, then a 6px gap, then minimize - this lands on
+    // minimize's center.
+    in.mouseX = 40 + 680 - 10 - 20 - 6 - 10; in.mouseY = 30 + 18;
+    for (int i = 0; i < 8; ++i) menu.Update(in, dt);
+    renderFrame("frame_07_minimize_hover");
+
+    in.mousePressed = true;
+    menu.Update(in, dt);
+    in.mousePressed = false;
+    for (int i = 0; i < 14; ++i) menu.Update(in, dt); // collapse animation plays
+    renderFrame("frame_08_collapsed");
+
+    // Expand it back out for anyone poking at the remaining frames.
+    in.mousePressed = true;
+    menu.Update(in, dt);
+    in.mousePressed = false;
+    for (int i = 0; i < 14; ++i) menu.Update(in, dt);
 
     // Persist and reload a config profile to prove the config system round-trips.
     menu.SaveProfile(kOutDir + "/profiles", "default");

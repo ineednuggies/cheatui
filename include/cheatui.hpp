@@ -9,6 +9,7 @@
 #include "Animation.hpp"
 #include "Renderer.hpp"
 #include "Theme.hpp"
+#include "Style.hpp"
 #include "Input.hpp"
 #include "Config.hpp"
 #include "Widgets.hpp"

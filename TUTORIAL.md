@@ -119,8 +119,11 @@ while (running) {
 
 `yourRenderer` is anything implementing `cui::IRenderer` - a handful of
 draw calls (`FillRect`, `FillRoundedRect`, `FillCircle`, `Line`, `Text`,
-`TextWidth`, and clip push/pop). Implement it once on top of whatever you
-already draw with:
+`TextWidth`, and clip push/pop), plus one optional one:
+`FillRoundedRectGradient` (used for the bevel look). It has a safe default
+if you don't override it, so it's not a required method to get a working
+backend, just a nicer-looking one. Implement it once on top of whatever
+you already draw with:
 
 ```cpp
 class MyRenderer : public cui::IRenderer {
@@ -167,6 +170,14 @@ theme.cornerRadius = 10.0f;
 theme.animDuration = 0.25f; // slower fades everywhere
 ```
 
+Two more knobs control the "modern" look - the soft glow around active/hovered
+elements and the light-top/dark-bottom bevel gradient on panels and buttons:
+
+```cpp
+theme.glowStrength = 0.8f;   // 0 = no glow anywhere, higher = brighter halos
+theme.bevelStrength = 0.15f; // 0 = flat fills, higher = more pronounced bevel
+```
+
 There's also a built-in hue-cycling accent mode:
 
 ```cpp
@@ -175,9 +186,51 @@ theme.rainbowAccent = true;
 
 flip that from a checkbox's `onChange` and the accent color continuously
 cycles instead of staying fixed - see `examples/demo.cpp`'s "Visuals" tab
-for the wiring.
+for the wiring. The sidebar's active-tab indicator also has a slow ambient
+shimmer built in by default, independent of `rainbowAccent`.
 
-## 7. Running the examples
+If you're drawing your own widget, `include/Style.hpp` has two helpers
+built purely on top of `IRenderer` so they work with any backend:
+
+```cpp
+cui::style::Glow(renderer, bounds, cornerRadius, theme.accent, theme.glowStrength);
+cui::style::BeveledPanel(renderer, bounds, cornerRadius, baseColor, theme.bevelStrength);
+```
+
+## 7. Window controls (minimize, close, custom buttons)
+
+The title bar can hold a minimize button, a close button, and any custom
+buttons you want - all three are opt-in and independent of each other.
+
+**Minimize** is on by default. Clicking it smoothly collapses the window
+down to just its title bar (content fades/clips out rather than just
+vanishing). Turn it off with:
+
+```cpp
+menu.SetCollapsible(false);
+```
+
+**Close** only appears once you give it something to do - closing usually
+means something app-specific, so cheatui doesn't assume:
+
+```cpp
+menu.SetOnClose([&]() {
+    menu.SetVisible(false); // fades the whole menu out
+    // or: appRunning = false; save_settings(); etc.
+});
+```
+
+**Custom buttons** (a pin, a settings gear, whatever) go in left of
+minimize/close, in the order you add them:
+
+```cpp
+menu.AddTitleBarButton("o", [&]() { alwaysOnTop = !alwaysOnTop; });
+```
+
+All three get the same hover glow and beveled look as everything else, for
+free.
+
+## 8. Running the examples
 
 ```sh
 cmake -S . -B build
@@ -194,7 +247,7 @@ Turn one into a real image with:
 python3 tools/raw_to_png.py out/getting_started.raw out/getting_started.png
 ```
 
-## 8. Adding your own widget type
+## 9. Adding your own widget type
 
 Every widget is just a class with the same shape: implement `Update`
 (handle input, advance animations), `Render` (draw with `IRenderer`), and

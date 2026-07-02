@@ -1,4 +1,5 @@
 #include "Widgets.hpp"
+#include "Style.hpp"
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
@@ -37,7 +38,7 @@ void Checkbox::Update(const InputState& in, Rect bounds, float dt) {
 
 void Checkbox::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Color rowBg = Color::Lerp(theme.background, theme.panelAlt, glow_.Value() * 0.6f);
-    r.FillRoundedRect(bounds.x, bounds.y, bounds.w, bounds.h, theme.cornerRadius * 0.6f, rowBg);
+    style::BeveledPanel(r, bounds, theme.cornerRadius * 0.6f, rowBg, theme.bevelStrength * 0.5f);
 
     r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
 
@@ -45,12 +46,20 @@ void Checkbox::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     float pillX = bounds.x + bounds.w - pillW - theme.padding;
     float pillY = bounds.y + (bounds.h - pillH) * 0.5f;
     float t = pillFade_.Value();
-    Color track = Color::Lerp(theme.toggleOff, theme.accent, t);
-    r.FillRoundedRect(pillX, pillY, pillW, pillH, pillH * 0.5f, track);
+
+    if (t > 0.02f) {
+        style::Glow(r, Rect{pillX, pillY, pillW, pillH}, pillH * 0.5f, theme.accent, t * theme.glowStrength);
+    }
+
+    Color trackBase = Color::Lerp(theme.toggleOff, theme.accent, t);
+    Color trackTop = Color::Lerp(trackBase, theme.accentSoft, t * 0.6f);
+    r.FillRoundedRectGradient(pillX, pillY, pillW, pillH, pillH * 0.5f, trackTop, trackBase);
+
     float knobR = pillH * 0.5f - 2.0f;
     float knobX = pillX + 2.0f + knobR + (pillW - 4.0f - knobR * 2.0f) * t;
     float knobY = pillY + pillH * 0.5f;
     r.FillCircle(knobX, knobY, knobR, Color(255, 255, 255, 255));
+    r.FillCircle(knobX, knobY - knobR * 0.25f, knobR * 0.6f, Color(255, 255, 255, 90)); // soft top-lit highlight
 }
 
 void Checkbox::SaveTo(ConfigStore& cfg) const { cfg.SetBool(id_, on_); }
@@ -92,6 +101,9 @@ void Slider::Update(const InputState& in, Rect bounds, float dt) {
         if (onChange_) onChange_(value_);
     }
     thumbPos_.Update(dt);
+    bool nearThumb = grabZone.Contains(in.mouseX, in.mouseY);
+    thumbGlow_.SetTarget((nearThumb || dragging_) ? 1.0f : 0.0f);
+    thumbGlow_.Update(dt);
 }
 
 void Slider::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
@@ -102,10 +114,22 @@ void Slider::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
 
     float trackY = bounds.y + bounds.h - 12.0f;
     float trackX = bounds.x + 2.0f, trackW = bounds.w - 4.0f, trackH = 8.0f;
-    r.FillRoundedRect(trackX, trackY, trackW, trackH, trackH * 0.5f, theme.toggleOff);
+    style::BeveledPanel(r, Rect{trackX, trackY, trackW, trackH}, trackH * 0.5f, theme.toggleOff, theme.bevelStrength);
+
     float t = thumbPos_.Value();
-    r.FillRoundedRect(trackX, trackY, trackW * t, trackH, trackH * 0.5f, theme.accent);
-    r.FillCircle(trackX + trackW * t, trackY + trackH * 0.5f, 6.5f, Color(255, 255, 255, 255));
+    float fillW = trackW * t;
+    if (fillW > 1.0f) {
+        r.FillRoundedRectGradient(trackX, trackY, fillW, trackH, trackH * 0.5f, theme.accentSoft, theme.accent);
+    }
+
+    float thumbX = trackX + fillW;
+    float thumbY = trackY + trackH * 0.5f;
+    float glowAmount = thumbGlow_.Value();
+    if (glowAmount > 0.02f) {
+        style::GlowCircle(r, thumbX, thumbY, 6.5f, theme.accent, glowAmount * theme.glowStrength);
+    }
+    r.FillCircle(thumbX, thumbY, 6.5f, Color(255, 255, 255, 255));
+    r.FillCircle(thumbX, thumbY - 1.5f, 3.5f, Color(255, 255, 255, 90)); // top-lit highlight, sells the bevel
 }
 
 void Slider::SaveTo(ConfigStore& cfg) const { cfg.SetFloat(id_, value_); }
@@ -152,8 +176,10 @@ void Stepper::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
 
     Color minusBg = Color::Lerp(theme.panelAlt, theme.accent, minusGlow_.Value() * 0.35f);
     Color plusBg = Color::Lerp(theme.panelAlt, theme.accent, plusGlow_.Value() * 0.35f);
-    r.FillRoundedRect(minusBtn.x, minusBtn.y, minusBtn.w, minusBtn.h, theme.cornerRadius * 0.5f, minusBg);
-    r.FillRoundedRect(plusBtn.x, plusBtn.y, plusBtn.w, plusBtn.h, theme.cornerRadius * 0.5f, plusBg);
+    if (minusGlow_.Value() > 0.05f) style::Glow(r, minusBtn, theme.cornerRadius * 0.5f, theme.accent, minusGlow_.Value() * theme.glowStrength * 0.7f);
+    if (plusGlow_.Value() > 0.05f) style::Glow(r, plusBtn, theme.cornerRadius * 0.5f, theme.accent, plusGlow_.Value() * theme.glowStrength * 0.7f);
+    style::BeveledPanel(r, minusBtn, theme.cornerRadius * 0.5f, minusBg, theme.bevelStrength);
+    style::BeveledPanel(r, plusBtn, theme.cornerRadius * 0.5f, plusBg, theme.bevelStrength);
 
     float mcx = minusBtn.x + minusBtn.w * 0.5f, mcy = minusBtn.y + minusBtn.h * 0.5f;
     r.Line(mcx - 4, mcy, mcx + 4, mcy, theme.text, 1.5f);
@@ -208,23 +234,26 @@ void ComboBox::Update(const InputState& in, Rect bounds, float dt) {
 
 void ComboBox::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Rect header{bounds.x, bounds.y, bounds.w, theme.rowHeight};
-    r.FillRoundedRect(header.x, header.y, header.w, header.h, theme.cornerRadius * 0.6f, theme.panelAlt);
+    style::BeveledPanel(r, header, theme.cornerRadius * 0.6f, theme.panelAlt, theme.bevelStrength);
     r.Text(header.x + theme.padding, header.y + header.h * 0.5f - 3.5f, label_, theme.textDim, 1.0f);
     std::string val = options_.empty() ? "" : options_[selected_];
     float valW = r.TextWidth(val, 1.0f);
     r.Text(header.x + header.w - valW - 22.0f, header.y + header.h * 0.5f - 3.5f, val, theme.text, 1.0f);
 
-    float cx = header.x + header.w - 12.0f, cy = header.y + header.h * 0.5f;
-    r.Line(cx - 4, cy - 2, cx, cy + 2, theme.textDim, 1.5f);
-    r.Line(cx, cy + 2, cx + 4, cy - 2, theme.textDim, 1.5f);
-
+    // chevron rotates a little as the dropdown opens, instead of just appearing
     float openT = openFade_.Value();
+    float cx = header.x + header.w - 12.0f, cy = header.y + header.h * 0.5f;
+    float flip = 1.0f - openT * 2.0f; // 1 -> -1 as it opens, flips the chevron upside down
+    r.Line(cx - 4, cy - 2 * flip, cx, cy + 2 * flip, theme.textDim, 1.5f);
+    r.Line(cx, cy + 2 * flip, cx + 4, cy - 2 * flip, theme.textDim, 1.5f);
+
     if (openT > 0.001f) {
         r.PushClip(bounds.x, header.y + header.h, bounds.w, bounds.h - header.h);
         for (size_t i = 0; i < options_.size(); ++i) {
             Rect optRect{bounds.x, header.y + header.h * (1 + static_cast<float>(i)), bounds.w, header.h};
             bool isSel = static_cast<int>(i) == selected_;
             r.FillRect(optRect.x, optRect.y, optRect.w, optRect.h, isSel ? theme.accentDim : theme.background);
+            if (isSel) r.FillRect(optRect.x, optRect.y, 3.0f, optRect.h, theme.accent); // active-row accent strip
             r.Text(optRect.x + theme.padding, optRect.y + optRect.h * 0.5f - 3.5f, options_[i],
                    isSel ? theme.accent : theme.textDim, 1.0f);
         }
@@ -273,8 +302,11 @@ void RadioGroup::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     float gap = 6.0f;
     float btnW = (bounds.w - gap * (options_.size() - 1)) / static_cast<float>(options_.size());
 
-    r.FillRoundedRect(bounds.x, btnY, bounds.w, btnH, theme.cornerRadius * 0.6f, theme.panelAlt);
-    r.FillRoundedRect(selectorX_.Value(), btnY, selectorW_.Value(), btnH, theme.cornerRadius * 0.6f, theme.accent);
+    style::BeveledPanel(r, Rect{bounds.x, btnY, bounds.w, btnH}, theme.cornerRadius * 0.6f, theme.panelAlt, theme.bevelStrength);
+    style::Glow(r, Rect{selectorX_.Value(), btnY, selectorW_.Value(), btnH}, theme.cornerRadius * 0.6f,
+                theme.accent, theme.glowStrength * 0.6f);
+    r.FillRoundedRectGradient(selectorX_.Value(), btnY, selectorW_.Value(), btnH, theme.cornerRadius * 0.6f,
+                               theme.accentSoft, theme.accent);
 
     for (size_t i = 0; i < options_.size(); ++i) {
         float bx = bounds.x + (btnW + gap) * i;
@@ -330,13 +362,15 @@ void ColorPicker::Update(const InputState& in, Rect bounds, float dt) {
 
 void ColorPicker::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Rect header{bounds.x, bounds.y, bounds.w, theme.rowHeight};
-    r.FillRoundedRect(header.x, header.y, header.w, header.h, theme.cornerRadius * 0.6f, theme.panelAlt);
+    style::BeveledPanel(r, header, theme.cornerRadius * 0.6f, theme.panelAlt, theme.bevelStrength);
     r.Text(header.x + theme.padding, header.y + header.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
     float swSize = 18.0f;
-    r.FillRoundedRect(header.x + header.w - swSize - theme.padding, header.y + (header.h - swSize) * 0.5f,
-                       swSize, swSize, 4.0f, value_);
-    r.StrokeRect(header.x + header.w - swSize - theme.padding, header.y + (header.h - swSize) * 0.5f,
-                 swSize, swSize, theme.border, 1.0f);
+    float swX = header.x + header.w - swSize - theme.padding;
+    float swY = header.y + (header.h - swSize) * 0.5f;
+    style::Glow(r, Rect{swX, swY, swSize, swSize}, 4.0f, value_, theme.glowStrength * 0.5f);
+    r.FillRoundedRectGradient(swX, swY, swSize, swSize, 4.0f,
+                               Color::Lerp(value_, Color(255, 255, 255, 255), 0.25f), value_);
+    r.StrokeRect(swX, swY, swSize, swSize, theme.border, 1.0f);
 
     float openT = openFade_.Value();
     if (openT > 0.01f) {
@@ -389,7 +423,10 @@ void Button::Update(const InputState& in, Rect bounds, float dt) {
 
 void Button::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Color bg = Color::Lerp(theme.panelAlt, theme.accent, glow_.Value() * 0.35f);
-    r.FillRoundedRect(bounds.x, bounds.y, bounds.w, bounds.h, theme.cornerRadius * 0.6f, bg);
+    if (glow_.Value() > 0.05f) {
+        style::Glow(r, bounds, theme.cornerRadius * 0.6f, theme.accent, glow_.Value() * theme.glowStrength);
+    }
+    style::BeveledPanel(r, bounds, theme.cornerRadius * 0.6f, bg, theme.bevelStrength);
     float tw = r.TextWidth(label_, 1.0f);
     r.Text(bounds.x + (bounds.w - tw) * 0.5f, bounds.y + bounds.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
 }
@@ -418,7 +455,7 @@ void Keybind::Update(const InputState& in, Rect bounds, float dt) {
 
 void Keybind::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Color rowBg = Color::Lerp(theme.background, theme.panelAlt, glow_.Value() * 0.6f);
-    r.FillRoundedRect(bounds.x, bounds.y, bounds.w, bounds.h, theme.cornerRadius * 0.6f, rowBg);
+    style::BeveledPanel(r, bounds, theme.cornerRadius * 0.6f, rowBg, theme.bevelStrength * 0.5f);
     r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
 
     std::string display;
@@ -431,7 +468,8 @@ void Keybind::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     float pillX = bounds.x + bounds.w - pillW - theme.padding;
     float pillY = bounds.y + (bounds.h - pillH) * 0.5f;
     Color pillBg = listening_ ? theme.accentDim : theme.toggleOff;
-    r.FillRoundedRect(pillX, pillY, pillW, pillH, pillH * 0.4f, pillBg);
+    if (listening_) style::Glow(r, Rect{pillX, pillY, pillW, pillH}, pillH * 0.4f, theme.accent, theme.glowStrength);
+    style::BeveledPanel(r, Rect{pillX, pillY, pillW, pillH}, pillH * 0.4f, pillBg, theme.bevelStrength);
     float tw = r.TextWidth(display, 1.0f);
     r.Text(pillX + (pillW - tw) * 0.5f, pillY + pillH * 0.5f - 3.5f, display,
            listening_ ? theme.accent : theme.text, 1.0f);

@@ -26,6 +26,16 @@ public:
     virtual void Text(float x, float y, const std::string& text, Color c, float scale = 1.0f) = 0;
     virtual float TextWidth(const std::string& text, float scale = 1.0f) const = 0;
 
+    // Vertical gradient fill (top color -> bottom color), used for the
+    // glassy bevel look on panels, buttons, and toggles. Backends that
+    // can't easily do a true gradient can leave this as-is; the default
+    // just averages the two colors and falls back to a flat fill, so
+    // existing IRenderer implementations don't break when this was added.
+    virtual void FillRoundedRectGradient(float x, float y, float w, float h, float radius,
+                                          Color top, Color bottom) {
+        FillRoundedRect(x, y, w, h, radius, Color::Lerp(top, bottom, 0.5f));
+    }
+
     // Optional scissor/clip support - default no-op for simple backends.
     virtual void PushClip(float x, float y, float w, float h) { (void)x; (void)y; (void)w; (void)h; }
     virtual void PopClip() {}

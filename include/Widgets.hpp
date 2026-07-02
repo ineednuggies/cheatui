@@ -75,6 +75,7 @@ private:
     float lo_, hi_, step_, value_;
     bool dragging_ = false;
     mutable AnimatedFloat thumbPos_;
+    mutable AnimatedFloat thumbGlow_{0.0f, 0.15f};
     std::function<void(float)> onChange_;
 
     float SnapToStep(float v) const;
