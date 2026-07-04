@@ -21,7 +21,10 @@ struct TitleBarButton {
 
 // The whole menu window: draggable title bar, sidebar of tabs with a
 // sliding selection indicator, content panel for the active tab's widgets.
-// This is the class an application actually creates and drives.
+// Title bar, sidebar, and content are each their own rounded floating
+// panel with real gaps between them, so nothing needs corner-matching
+// against its neighbor - every panel is just uniformly rounded. This is
+// the class an application actually creates and drives.
 class Menu {
 public:
     Menu(std::string title, Rect bounds);
@@ -53,7 +56,18 @@ public:
     // Buttons appear left of minimize/close, in the order added.
     void AddTitleBarButton(const std::string& glyph, std::function<void()> onClick);
 
+    // Direct mutation - GetTheme().accent = ...; - takes effect next frame
+    // with no transition. For a smooth cross-fade between two whole
+    // palettes (including switching to one of the cui::themes:: presets),
+    // use SetTheme() instead.
     Theme& GetTheme() { return theme_; }
+    const Theme& GetTheme() const { return theme_; }
+
+    // Replaces the whole theme. By default every themed color cross-fades
+    // from its current (possibly mid-transition) value to the new theme's
+    // over theme.themeTransitionTime seconds, instead of snapping.
+    void SetTheme(const Theme& newTheme, bool animate = true);
+
     const Rect& Bounds() const { return bounds_; }
 
     // Config profile management - pushes every bound widget's current value
@@ -63,11 +77,16 @@ public:
     std::vector<std::string> ListProfiles(const std::string& dir) const { return ConfigStore::ListProfiles(dir); }
 
 private:
+    static constexpr float kTitleBarHeight = 36.0f;
+    static constexpr float kTabRowHeight = 34.0f;
+
     std::string title_;
     Rect bounds_;
     Theme theme_;
     std::vector<std::unique_ptr<Tab>> tabs_;
     int active_ = 0;
+    int previousActive_ = 0;
+    AnimatedFloat tabSwitchAnim_{1.0f, 0.2f, easing::CubicInOut}; // 0 = just switched, 1 = settled
 
     bool wantVisible_ = true;
     AnimatedFloat openAnim_{1.0f, 0.16f, easing::CubicOut}; // 0 = closed, 1 = fully open
@@ -81,6 +100,11 @@ private:
     Oscillator ambientPulse_{0.25f};
     Color liveAccent_;
 
+    // Theme cross-fade: themeFrom_ is where the fade started, theme_ is
+    // the target, themeTransition_ is how far along [0,1] we are.
+    Theme themeFrom_;
+    AnimatedFloat themeTransition_{1.0f, 0.35f, easing::CubicInOut};
+
     std::function<void()> onClose_;
     AnimatedFloat closeHover_{0.0f, 0.12f};
     AnimatedFloat minimizeHover_{0.0f, 0.12f};
@@ -89,14 +113,35 @@ private:
     bool draggingWindow_ = false;
     float dragOffsetX_ = 0, dragOffsetY_ = 0;
 
-    Rect TitleBarRect() const { return {bounds_.x, bounds_.y, bounds_.w, 36.0f}; }
-    Rect SidebarRect() const { return {bounds_.x, bounds_.y + 36.0f, theme_.tabWidth, bounds_.h - 36.0f}; }
+    // Body height (sidebar + content row), already scaled by the collapse
+    // animation - 0 when fully collapsed, full height when expanded.
+    float BodyHeight() const;
+
+    Rect TitleBarRect() const {
+        float m = theme_.windowMargin;
+        return {bounds_.x + m, bounds_.y + m, bounds_.w - m * 2.0f, kTitleBarHeight};
+    }
+    Rect SidebarRect() const {
+        float m = theme_.windowMargin;
+        float top = bounds_.y + m + kTitleBarHeight + theme_.sectionGap * (1.0f - collapseAnim_.Value());
+        return {bounds_.x + m, top, theme_.tabWidth, BodyHeight()};
+    }
     Rect ContentRect() const {
         Rect sb = SidebarRect();
-        float pad = theme_.padding;
-        return {sb.x + sb.w + pad, bounds_.y + 36.0f + pad, bounds_.w - sb.w - pad * 2.0f, bounds_.h - 36.0f - pad * 2.0f};
+        float m = theme_.windowMargin;
+        float contentX = sb.x + sb.w + theme_.sectionGap;
+        float right = bounds_.x + bounds_.w - m;
+        return {contentX, sb.y, right - contentX > 0.0f ? right - contentX : 0.0f, sb.h};
     }
-    float EffectiveHeight() const { return bounds_.h - (bounds_.h - 36.0f) * collapseAnim_.Value(); }
+    // The content card's rect, minus its own inner padding - this is the
+    // actual area tab widgets are laid out in. Update() and Render() both
+    // go through this so hit-testing always matches what got drawn.
+    Rect InnerContentRect() const {
+        Rect c = ContentRect();
+        float p = theme_.padding;
+        return {c.x + p, c.y + p, c.w - p * 2.0f > 0.0f ? c.w - p * 2.0f : 0.0f,
+                c.h - p * 2.0f > 0.0f ? c.h - p * 2.0f : 0.0f};
+    }
 
     struct ButtonSlot {
         Rect rect;

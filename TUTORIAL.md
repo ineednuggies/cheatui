@@ -47,6 +47,9 @@ cui::Tab& main = menu.AddTab("Main");
 `AddTab` returns a reference you use to add widgets to that page. Add as
 many tabs as you want; they show up as a vertical list on the left with
 an animated selection bar that slides to whichever one is active.
+Switching tabs also crossfades and slides the content itself - the
+outgoing tab fades out to one side while the incoming one fades in from
+the other, automatically, no setup needed.
 
 ## 3. Adding widgets
 
@@ -97,6 +100,21 @@ enabled.SetOnChange([](bool v) {
 | `Button` | fire-and-forget action |
 | `Label` | section header, purely visual |
 
+### Typing an exact slider value
+
+Dragging isn't always precise enough - click directly on a slider's value
+text (not the track) and it turns into a small text box you can type an
+exact number into. Enter or clicking away commits it; Escape cancels.
+
+For this to work, your input backend needs to feed two more things into
+`InputState` beyond mouse position: `textChar` (the actual typed character
+- e.g. from a Win32 `WM_CHAR` message or an SDL text-input event) and
+`backspace`/`enterPressed`/`escapePressed`. This is deliberately separate
+from `keyPressed` (which `Keybind` uses) - `keyPressed` carries raw,
+non-portable key codes, while `textChar` carries an actual ASCII character
+meant for typing. If your app never sets these, sliders still work fine by
+dragging; typed editing just won't activate.
+
 ## 4. Hooking it up to a real window
 
 The library never touches a window system directly - you drive it with a
@@ -110,7 +128,11 @@ while (running) {
     input.mouseDown = /* left button currently held */;
     input.mousePressed = /* left button went down this frame */;
     input.mouseReleased = /* left button went up this frame */;
-    input.keyPressed = /* key code pressed this frame, or 0 */;
+    input.keyPressed = /* raw key code pressed this frame, or 0 - for Keybind */;
+    input.textChar = /* typed ASCII character this frame, or 0 - for typing slider values */;
+    input.backspace = /* backspace pressed this frame */;
+    input.enterPressed = /* enter/return pressed this frame */;
+    input.escapePressed = /* escape pressed this frame */;
 
     menu.Update(input, deltaTimeSeconds);
     menu.Render(yourRenderer);
@@ -170,13 +192,45 @@ theme.cornerRadius = 10.0f;
 theme.animDuration = 0.25f; // slower fades everywhere
 ```
 
-Two more knobs control the "modern" look - the soft glow around active/hovered
-elements and the light-top/dark-bottom bevel gradient on panels and buttons:
+Changes made this way take effect next frame with no transition. For a
+full palette swap that smoothly cross-fades every color instead of
+snapping, use `SetTheme()` instead - including with one of the built-in
+presets from `Themes.hpp`:
+
+```cpp
+#include "Themes.hpp"
+
+menu.SetTheme(cui::themes::Crimson());   // fades from whatever's live now
+menu.SetTheme(cui::themes::Default(), false); // false = snap instantly, no fade
+```
+
+Presets included: `Default`, `Midnight`, `Crimson`, `Emerald`, `Ocean`,
+`Sunset`. Each is just a `Theme`, so you can also start from one and tweak
+individual fields before calling `SetTheme`:
+
+```cpp
+cui::Theme t = cui::themes::Ocean();
+t.cornerRadius = 4.0f;
+menu.SetTheme(t);
+```
+
+`theme.themeTransitionTime` controls how long the cross-fade takes
+(default 0.35 seconds).
+
+A few more knobs control the "modern" look - the soft glow around
+active/hovered elements, the light-top/dark-bottom bevel gradient on
+panels and buttons, and the text size (the font is vector-based, so it
+scales cleanly):
 
 ```cpp
 theme.glowStrength = 0.8f;   // 0 = no glow anywhere, higher = brighter halos
 theme.bevelStrength = 0.15f; // 0 = flat fills, higher = more pronounced bevel
+theme.textScale = 2.0f;      // glyph height is 7 * textScale pixels
 ```
+
+Layout spacing is adjustable too - `theme.windowMargin` (gap between the
+window's outer edge and the panels inside it) and `theme.sectionGap` (gap
+between the title bar, sidebar, and content panels).
 
 There's also a built-in hue-cycling accent mode:
 

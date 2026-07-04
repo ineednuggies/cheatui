@@ -19,14 +19,19 @@ struct Theme {
     Color danger         = Color::FromHex(0xFF5C5C, 255);
     Color success        = Color::FromHex(0x4CD27A, 255);
 
-    float cornerRadius   = 6.0f;
+    float cornerRadius   = 10.0f;
     float padding        = 10.0f;
     float rowHeight      = 28.0f;
     float tabWidth       = 130.0f;
     float animDuration   = 0.16f; // seconds, used by most hover/click fades
+    float textScale      = 1.8f; // glyph height is 7 * textScale pixels
+
+    float sectionGap     = 10.0f; // gap between the title bar, sidebar, and content panels
+    float windowMargin   = 8.0f;  // gap between the outer window edge and the panels inside it
 
     float bevelStrength  = 0.10f; // 0 = flat fills, higher = more pronounced light-top/dark-bottom bevel
     float glowStrength   = 0.55f; // 0 = no glow halo, 1 = strong glow on accented/active elements
+    float themeTransitionTime = 0.35f; // seconds a Menu::SetTheme() cross-fade takes
 
     bool rainbowAccent   = false; // accent color hue-cycles instead of staying fixed
 };

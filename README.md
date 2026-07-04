@@ -1,9 +1,10 @@
 # cheatui
 
 A small, dependency-free C++17 UI library for building themed overlay-style
-menus: draggable window, tabbed sidebar with an animated selection bar,
-glowing accents, soft bevel gradients, anti-aliased shapes, and a save/load
-config system. No third-party libraries required.
+menus: draggable window, tabbed sidebar with an animated selection bar and
+crossfading tab content, glowing accents, soft bevel gradients, anti-aliased
+shapes, a smooth vector font, swappable/cross-fading color themes, and a
+save/load config system. No third-party libraries required.
 
 ![menu preview](preview/frame_00_initial.png)
 
@@ -21,7 +22,7 @@ README covers the shape of the project and how to get it building.
 ## Widgets
 
 - **Checkbox** - on/off switch with a sliding, glowing pill
-- **Slider** - drag to pick a value from a range, with a gradient fill and glowing thumb
+- **Slider** - drag to pick a value, or click the value itself to type an exact number
 - **Stepper** - small integer count with -/+ buttons
 - **RadioGroup** - a few mutually exclusive options, shown side by side with a sliding selector
 - **ComboBox** - dropdown list for longer option sets
@@ -43,13 +44,19 @@ decide what closing means - hide, quit, save-then-quit), and any number of
 The whole window also fades and slides in/out smoothly instead of
 snapping when you show or hide it. See TUTORIAL.md section 7.
 
-## The modern look
+Title bar, sidebar, and content are each their own independent, fully
+rounded floating panel with real gaps between them (`theme.windowMargin`,
+`theme.sectionGap`) - not one flush block - so nothing needs corner-matching
+against its neighbor and every panel is uniformly rounded, no square notches.
 
-Three things work together to get away from a "pixel art" feel:
+## The modern look
 
 - **Real anti-aliasing** - `Canvas` computes sub-pixel coverage on every
   circle, rounded corner, and line instead of a hard inside/outside test,
   so edges are smooth at any size or angle.
+- **A smooth vector font** - text is drawn as anti-aliased monoline strokes
+  (`include/StrokeFont.hpp`), not a blocky bitmap, so labels and numbers
+  read as clean lines rather than pixelated squares.
 - **Glow** - a soft halo behind active toggles, hovered buttons, the
   selected tab, and the window border, built from a few translucent
   layered shapes (`cui::style::Glow`).
@@ -57,9 +64,12 @@ Three things work together to get away from a "pixel art" feel:
   dark-bottom gradient plus a hairline top highlight instead of a flat
   fill (`cui::style::BeveledPanel`), which is what makes toggles, sliders,
   and buttons read as slightly raised/glassy rather than flat rectangles.
+- **Swappable, cross-fading themes** - `include/Themes.hpp` ships a handful
+  of ready-made palettes; `menu.SetTheme(cui::themes::Crimson())` blends
+  every color from the current theme to the new one instead of snapping.
 
-All three are controlled by `theme.glowStrength` and `theme.bevelStrength`
-- turn them down to 0 for a flatter look, or up for something punchier.
+`theme.glowStrength`, `theme.bevelStrength`, and `theme.textScale` are all
+adjustable if you want a flatter, punchier, or differently-sized look.
 
 ## Project layout
 
@@ -71,18 +81,19 @@ include/           every public header (this is what you copy into your project)
   Animation.hpp       AnimatedFloat / AnimatedColor / HueCycler / Oscillator - fade/slide/pulse primitives
   Renderer.hpp         IRenderer - implement this once per graphics backend
   Style.hpp             Glow / BeveledPanel helpers, built only on IRenderer
-  Theme.hpp             color palette + spacing + glow/bevel strength, all in one struct
-  Input.hpp              per-frame mouse/keyboard snapshot
+  Theme.hpp             color palette + spacing + glow/bevel/text scale, all in one struct
+  Themes.hpp             ready-made theme presets (Midnight, Crimson, Emerald, Ocean, Sunset...)
+  Input.hpp              per-frame mouse/keyboard snapshot (mouse, keys, and typed text)
   Config.hpp               typed key/value store with .cfg file I/O
   Widgets.hpp                 every widget class
   Tab.hpp                        a page of widgets
   Menu.hpp                          the window itself (chrome buttons, tabs, fade in/out)
   Canvas.hpp                        reference CPU-rendered IRenderer implementation
-  Font5x7.hpp                       bitmap font data used by Canvas
+  StrokeFont.hpp                     vector font data used by Canvas
 src/                implementations for the headers above that need one
 examples/
   getting_started.cpp    the short walkthrough from TUTORIAL.md, runnable
-  demo.cpp                bigger 5-tab showcase exercising every widget + window chrome
+  demo.cpp                bigger 5-tab showcase exercising every widget + window chrome + themes
 tools/
   raw_to_png.py            converts Canvas's .raw frame dumps into real PNGs
 ```
@@ -159,10 +170,12 @@ specific version instead of tracking `main`.
 
 ## Notes
 
-- Text rendering uses a small bitmap font (`Font5x7.hpp`) built for this
-  project so the examples have zero font-file dependencies. Swap
-  `Canvas::Text` for your platform's real text API in a production
-  backend for proper kerning, anti-aliasing, and Unicode support.
+- Text rendering uses a small monoline vector font (`StrokeFont.hpp`) built
+  for this project so the examples have zero font-file dependencies -
+  strokes are drawn with the same anti-aliased `Line()` calls as everything
+  else, so text stays smooth at any scale (`theme.textScale`). Swap
+  `Canvas::Text` for your platform's real text API in a production backend
+  for proper kerning and full Unicode support.
 - The library is UI only - layout, input handling, animation, theming,
   config persistence. There's no automation, memory access, or networking
   anywhere in it. What a "Checkbox" or "Auto X" toggle *does* when it's on

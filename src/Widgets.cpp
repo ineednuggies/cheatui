@@ -40,7 +40,7 @@ void Checkbox::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Color rowBg = Color::Lerp(theme.background, theme.panelAlt, glow_.Value() * 0.6f);
     style::BeveledPanel(r, bounds, theme.cornerRadius * 0.6f, rowBg, theme.bevelStrength * 0.5f);
 
-    r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
+    r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - (3.5f * theme.textScale), label_, theme.text, theme.textScale);
 
     float pillW = 34.0f, pillH = 16.0f;
     float pillX = bounds.x + bounds.w - pillW - theme.padding;
@@ -87,7 +87,44 @@ void Slider::SetValue(float v, bool snap) {
     thumbPos_.SetTarget(t, snap);
 }
 
+void Slider::CommitEdit() {
+    editing_ = false;
+    if (editBuffer_.empty() || editBuffer_ == "-" || editBuffer_ == ".") return;
+    try {
+        float parsed = std::stof(editBuffer_);
+        SetValue(parsed, true);
+        if (onChange_) onChange_(value_);
+    } catch (...) {
+        // not a valid number - just drop the edit and keep the old value
+    }
+}
+
 void Slider::Update(const InputState& in, Rect bounds, float dt) {
+    // A fixed-size hit region in the top-right corner, roughly where the
+    // value text is drawn - click it to type a value instead of dragging.
+    Rect valueRect{bounds.x + bounds.w - 64.0f, bounds.y, 60.0f, 16.0f};
+
+    if (editing_) {
+        if (in.textChar) {
+            bool isDigit = in.textChar >= '0' && in.textChar <= '9';
+            bool isDot = in.textChar == '.' && editBuffer_.find('.') == std::string::npos;
+            bool isMinus = in.textChar == '-' && editBuffer_.empty() && lo_ < 0.0f;
+            if ((isDigit || isDot || isMinus) && editBuffer_.size() < 10) editBuffer_.push_back(in.textChar);
+        }
+        if (in.backspace && !editBuffer_.empty()) editBuffer_.pop_back();
+        if (in.enterPressed) CommitEdit();
+        else if (in.escapePressed) editing_ = false;
+        else if (in.mousePressed && !valueRect.Contains(in.mouseX, in.mouseY)) CommitEdit();
+        cursorBlink_.Update(dt);
+        return; // don't also drag the track while typing
+    }
+
+    if (valueRect.Contains(in.mouseX, in.mouseY) && in.mousePressed) {
+        editing_ = true;
+        editBuffer_ = FormatNumber(value_, step_ >= 1.0f && step_ == std::floor(step_));
+        return;
+    }
+
     float trackY = bounds.y + bounds.h - 12.0f;
     Rect track{bounds.x + 2.0f, trackY, bounds.w - 4.0f, 8.0f};
     Rect grabZone{track.x - 4, track.y - 8, track.w + 8, track.h + 16};
@@ -107,10 +144,23 @@ void Slider::Update(const InputState& in, Rect bounds, float dt) {
 }
 
 void Slider::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
-    r.Text(bounds.x + theme.padding, bounds.y + 2.0f, label_, theme.text, 1.0f);
-    std::string valStr = FormatNumber(value_, step_ >= 1.0f && step_ == std::floor(step_)) + suffix_;
-    float valW = r.TextWidth(valStr, 1.0f);
-    r.Text(bounds.x + bounds.w - valW - theme.padding, bounds.y + 2.0f, valStr, theme.accent, 1.0f);
+    r.Text(bounds.x + theme.padding, bounds.y + 2.0f, label_, theme.text, theme.textScale);
+
+    Rect valueRect{bounds.x + bounds.w - 64.0f, bounds.y, 60.0f, 16.0f};
+    if (editing_) {
+        style::BeveledPanel(r, valueRect, 4.0f, theme.panelAlt, theme.bevelStrength);
+        std::string shown = editBuffer_;
+        float w = r.TextWidth(shown, theme.textScale);
+        float textX = valueRect.x + valueRect.w - w - 6.0f;
+        r.Text(textX, bounds.y + 2.0f, shown, theme.accent, theme.textScale);
+        if (cursorBlink_.Value() > 0.5f) {
+            r.Line(textX + w + 2.0f, bounds.y + 1.0f, textX + w + 2.0f, bounds.y + 11.0f, theme.accent, 1.2f);
+        }
+    } else {
+        std::string valStr = FormatNumber(value_, step_ >= 1.0f && step_ == std::floor(step_)) + suffix_;
+        float valW = r.TextWidth(valStr, theme.textScale);
+        r.Text(bounds.x + bounds.w - valW - theme.padding, bounds.y + 2.0f, valStr, theme.accent, theme.textScale);
+    }
 
     float trackY = bounds.y + bounds.h - 12.0f;
     float trackX = bounds.x + 2.0f, trackW = bounds.w - 4.0f, trackH = 8.0f;
@@ -164,15 +214,15 @@ void Stepper::Update(const InputState& in, Rect bounds, float dt) {
 }
 
 void Stepper::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
-    r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
+    r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - (3.5f * theme.textScale), label_, theme.text, theme.textScale);
 
     float btnSize = bounds.h;
     Rect minusBtn{bounds.x + bounds.w - btnSize * 2 - 4, bounds.y, btnSize, btnSize};
     Rect plusBtn{bounds.x + bounds.w - btnSize, bounds.y, btnSize, btnSize};
 
     std::string valStr = std::to_string(value_);
-    float valW = r.TextWidth(valStr, 1.0f);
-    r.Text(minusBtn.x - valW - 10.0f, bounds.y + bounds.h * 0.5f - 3.5f, valStr, theme.accent, 1.0f);
+    float valW = r.TextWidth(valStr, theme.textScale);
+    r.Text(minusBtn.x - valW - 10.0f, bounds.y + bounds.h * 0.5f - (3.5f * theme.textScale), valStr, theme.accent, theme.textScale);
 
     Color minusBg = Color::Lerp(theme.panelAlt, theme.accent, minusGlow_.Value() * 0.35f);
     Color plusBg = Color::Lerp(theme.panelAlt, theme.accent, plusGlow_.Value() * 0.35f);
@@ -235,10 +285,10 @@ void ComboBox::Update(const InputState& in, Rect bounds, float dt) {
 void ComboBox::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Rect header{bounds.x, bounds.y, bounds.w, theme.rowHeight};
     style::BeveledPanel(r, header, theme.cornerRadius * 0.6f, theme.panelAlt, theme.bevelStrength);
-    r.Text(header.x + theme.padding, header.y + header.h * 0.5f - 3.5f, label_, theme.textDim, 1.0f);
+    r.Text(header.x + theme.padding, header.y + header.h * 0.5f - (3.5f * theme.textScale), label_, theme.textDim, theme.textScale);
     std::string val = options_.empty() ? "" : options_[selected_];
-    float valW = r.TextWidth(val, 1.0f);
-    r.Text(header.x + header.w - valW - 22.0f, header.y + header.h * 0.5f - 3.5f, val, theme.text, 1.0f);
+    float valW = r.TextWidth(val, theme.textScale);
+    r.Text(header.x + header.w - valW - 22.0f, header.y + header.h * 0.5f - (3.5f * theme.textScale), val, theme.text, theme.textScale);
 
     // chevron rotates a little as the dropdown opens, instead of just appearing
     float openT = openFade_.Value();
@@ -254,8 +304,8 @@ void ComboBox::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
             bool isSel = static_cast<int>(i) == selected_;
             r.FillRect(optRect.x, optRect.y, optRect.w, optRect.h, isSel ? theme.accentDim : theme.background);
             if (isSel) r.FillRect(optRect.x, optRect.y, 3.0f, optRect.h, theme.accent); // active-row accent strip
-            r.Text(optRect.x + theme.padding, optRect.y + optRect.h * 0.5f - 3.5f, options_[i],
-                   isSel ? theme.accent : theme.textDim, 1.0f);
+            r.Text(optRect.x + theme.padding, optRect.y + optRect.h * 0.5f - (3.5f * theme.textScale), options_[i],
+                   isSel ? theme.accent : theme.textDim, theme.textScale);
         }
         r.PopClip();
     }
@@ -295,7 +345,7 @@ void RadioGroup::Update(const InputState& in, Rect bounds, float dt) {
 }
 
 void RadioGroup::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
-    r.Text(bounds.x + 2.0f, bounds.y, label_, theme.textDim, 1.0f);
+    r.Text(bounds.x + 2.0f, bounds.y, label_, theme.textDim, theme.textScale);
 
     float btnY = bounds.y + 22.0f;
     float btnH = bounds.h - 22.0f;
@@ -311,9 +361,9 @@ void RadioGroup::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     for (size_t i = 0; i < options_.size(); ++i) {
         float bx = bounds.x + (btnW + gap) * i;
         bool isSel = static_cast<int>(i) == selected_;
-        float tw = r.TextWidth(options_[i], 1.0f);
-        r.Text(bx + (btnW - tw) * 0.5f, btnY + btnH * 0.5f - 3.5f, options_[i],
-               isSel ? Color(255, 255, 255, 255) : theme.textDim, 1.0f);
+        float tw = r.TextWidth(options_[i], theme.textScale);
+        r.Text(bx + (btnW - tw) * 0.5f, btnY + btnH * 0.5f - (3.5f * theme.textScale), options_[i],
+               isSel ? Color(255, 255, 255, 255) : theme.textDim, theme.textScale);
     }
 }
 
@@ -363,7 +413,7 @@ void ColorPicker::Update(const InputState& in, Rect bounds, float dt) {
 void ColorPicker::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Rect header{bounds.x, bounds.y, bounds.w, theme.rowHeight};
     style::BeveledPanel(r, header, theme.cornerRadius * 0.6f, theme.panelAlt, theme.bevelStrength);
-    r.Text(header.x + theme.padding, header.y + header.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
+    r.Text(header.x + theme.padding, header.y + header.h * 0.5f - (3.5f * theme.textScale), label_, theme.text, theme.textScale);
     float swSize = 18.0f;
     float swX = header.x + header.w - swSize - theme.padding;
     float swY = header.y + (header.h - swSize) * 0.5f;
@@ -427,8 +477,8 @@ void Button::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
         style::Glow(r, bounds, theme.cornerRadius * 0.6f, theme.accent, glow_.Value() * theme.glowStrength);
     }
     style::BeveledPanel(r, bounds, theme.cornerRadius * 0.6f, bg, theme.bevelStrength);
-    float tw = r.TextWidth(label_, 1.0f);
-    r.Text(bounds.x + (bounds.w - tw) * 0.5f, bounds.y + bounds.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
+    float tw = r.TextWidth(label_, theme.textScale);
+    r.Text(bounds.x + (bounds.w - tw) * 0.5f, bounds.y + bounds.h * 0.5f - (3.5f * theme.textScale), label_, theme.text, theme.textScale);
 }
 
 // ----------------------------------------------------------------- Keybind
@@ -456,7 +506,7 @@ void Keybind::Update(const InputState& in, Rect bounds, float dt) {
 void Keybind::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Color rowBg = Color::Lerp(theme.background, theme.panelAlt, glow_.Value() * 0.6f);
     style::BeveledPanel(r, bounds, theme.cornerRadius * 0.6f, rowBg, theme.bevelStrength * 0.5f);
-    r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - 3.5f, label_, theme.text, 1.0f);
+    r.Text(bounds.x + theme.padding, bounds.y + bounds.h * 0.5f - (3.5f * theme.textScale), label_, theme.text, theme.textScale);
 
     std::string display;
     if (listening_) display = "...";
@@ -470,9 +520,9 @@ void Keybind::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
     Color pillBg = listening_ ? theme.accentDim : theme.toggleOff;
     if (listening_) style::Glow(r, Rect{pillX, pillY, pillW, pillH}, pillH * 0.4f, theme.accent, theme.glowStrength);
     style::BeveledPanel(r, Rect{pillX, pillY, pillW, pillH}, pillH * 0.4f, pillBg, theme.bevelStrength);
-    float tw = r.TextWidth(display, 1.0f);
-    r.Text(pillX + (pillW - tw) * 0.5f, pillY + pillH * 0.5f - 3.5f, display,
-           listening_ ? theme.accent : theme.text, 1.0f);
+    float tw = r.TextWidth(display, theme.textScale);
+    r.Text(pillX + (pillW - tw) * 0.5f, pillY + pillH * 0.5f - (3.5f * theme.textScale), display,
+           listening_ ? theme.accent : theme.text, theme.textScale);
 }
 
 void Keybind::SaveTo(ConfigStore& cfg) const { cfg.SetInt(id_, key_); }
@@ -481,7 +531,8 @@ void Keybind::LoadFrom(const ConfigStore& cfg) { key_ = cfg.GetInt(id_, key_); }
 // ------------------------------------------------------------------- Label
 
 void Label::Render(IRenderer& r, const Theme& theme, Rect bounds) const {
-    r.Text(bounds.x + 2.0f, bounds.y + bounds.h - 14.0f, text_, theme.textDim, 1.0f);
+    float textY = bounds.y + bounds.h - (7.0f * theme.textScale) - 2.0f;
+    r.Text(bounds.x + 2.0f, textY, text_, theme.textDim, theme.textScale);
     r.FillRect(bounds.x, bounds.y + bounds.h - 2.0f, bounds.w, 1.0f, theme.border);
 }
 

@@ -4,7 +4,8 @@
 // this drives the library exactly how a real backend would each frame
 // (build an InputState, call Menu::Update, call Menu::Render) but renders
 // into the software Canvas and dumps a handful of frames to disk so the
-// animations (tab switch, toggle fade, hover, dragging) are visible.
+// animations (tab switch, toggle fade, hover, dragging, theme cross-fade)
+// are visible.
 //
 // For a much shorter, line-by-line walkthrough aimed at first-time users,
 // see examples/getting_started.cpp and TUTORIAL.md instead.
@@ -15,6 +16,7 @@
 
 #include "Menu.hpp"
 #include "Canvas.hpp"
+#include "Themes.hpp"
 #include <iostream>
 #include <filesystem>
 
@@ -46,7 +48,7 @@ int main() {
     general.Add<Checkbox>("general.auto_reconnect", "Auto-reconnect on disconnect", false);
     general.Add<Checkbox>("general.notifications", "Show notifications", true);
     general.Add<Label>("PERFORMANCE");
-    general.Add<Slider>("general.fps_cap", "FPS cap", 30.0f, 240.0f, 144.0f, 1.0f, "");
+    auto& fpsSlider = general.Add<Slider>("general.fps_cap", "FPS cap", 30.0f, 240.0f, 144.0f, 1.0f, "");
     general.Add<Slider>("general.opacity", "Menu opacity", 0.2f, 1.0f, 0.92f, 0.01f, "");
     general.Add<RadioGroup>("general.quality", "Render quality",
                              std::vector<std::string>{"Low", "Med", "High", "Ultra"}, 2);
@@ -94,46 +96,58 @@ int main() {
         std::cout << "[demo] wrote frame " << name << "\n";
     };
 
+    // Layout constants mirrored from Menu's private ones, so this file can
+    // work out where things land without needing Menu to expose them.
+    const float kMargin = 8.0f, kGap = 10.0f, kTitleH = 36.0f, kTabRowH = 34.0f, kPad = 10.0f;
+    const Rect winBounds{40, 30, 680, 400};
+    const Rect titleBar{winBounds.x + kMargin, winBounds.y + kMargin, winBounds.w - kMargin * 2.0f, kTitleH};
+    const Rect sidebar{winBounds.x + kMargin, titleBar.y + kTitleH + kGap, 130.0f,
+                        winBounds.h - kMargin * 2.0f - kTitleH - kGap};
+    const Rect contentCard{sidebar.x + sidebar.w + kGap, sidebar.y,
+                            winBounds.x + winBounds.w - kMargin - (sidebar.x + sidebar.w + kGap), sidebar.h};
+    const Rect innerContent{contentCard.x + kPad, contentCard.y + kPad,
+                             contentCard.w - kPad * 2.0f, contentCard.h - kPad * 2.0f};
+
     InputState in;
     float dt = 1.0f / 60.0f;
 
     // Frame 0: initial state, nothing hovered.
-    in = InputState{};
     menu.Update(in, dt);
     renderFrame("frame_00_initial");
 
-    // Frames simulating cursor moving onto the "Auto-save" toggle and clicking it
-    // (smooth pill-fade + back-out pop), then a few settle frames.
-    in.mouseX = 40 + 30; in.mouseY = 30 + 36 + 10 + 30; // approx over first checkbox row
-    for (int i = 0; i < 6; ++i) { menu.Update(in, dt); }
+    // Hover then click the first checkbox ("Auto-save config on exit") -
+    // Label "GENERAL" (22px) sits above it inside the content card.
+    in.mouseX = innerContent.x + 30; in.mouseY = innerContent.y + 22.0f + 6.0f + 14.0f;
+    for (int i = 0; i < 6; ++i) menu.Update(in, dt);
     in.mousePressed = true;
     menu.Update(in, dt);
     in.mousePressed = false;
     for (int i = 0; i < 10; ++i) menu.Update(in, dt); // let the pop animation play out
     renderFrame("frame_01_toggle_on");
 
-    // Switch to the "Visuals" tab - exercises the sliding sidebar indicator.
-    in.mouseX = 40 + 65; in.mouseY = 30 + 36 + 34 * 3 + 10; // 4th tab row ("Visuals")
+    // Switch to the "Visuals" tab (4th row) - captured mid-slide to show
+    // the sidebar indicator and content crossfade/slide both in flight.
+    in.mouseX = sidebar.x + 65; in.mouseY = sidebar.y + kTabRowH * 3.0f + 10.0f;
     in.mousePressed = true;
     menu.Update(in, dt);
     in.mousePressed = false;
-    for (int i = 0; i < 6; ++i) menu.Update(in, dt); // indicator still sliding
+    for (int i = 0; i < 4; ++i) menu.Update(in, dt); // indicator + tab content still transitioning
     renderFrame("frame_02_tab_switching");
-    for (int i = 0; i < 14; ++i) menu.Update(in, dt); // indicator settles
+    for (int i = 0; i < 16; ++i) menu.Update(in, dt); // both settle
     renderFrame("frame_03_tab_settled");
 
-    // Open the color picker and drag the hue strip + SV square a bit.
-    Rect content{40 + 130 + 10, 30 + 36 + 10, 680 - 130 - 20, 400 - 36 - 20};
-    float pickerHeaderY = content.y + 22.0f + 6.0f; // after the "THEME" label row
-    in.mouseX = content.x + 60; in.mouseY = pickerHeaderY + 14.0f;
+    // Open the color picker (first widget after the "THEME" label) and
+    // drag around inside the saturation/value square.
+    float pickerHeaderY = innerContent.y + 22.0f + 6.0f;
+    in.mouseX = innerContent.x + 60; in.mouseY = pickerHeaderY + 14.0f;
     in.mousePressed = true;
-    menu.Update(in, dt); // opens picker
+    menu.Update(in, dt); // opens the picker
     in.mousePressed = false;
     for (int i = 0; i < 8; ++i) menu.Update(in, dt); // open animation plays
     renderFrame("frame_04_colorpicker_open");
 
-    // drag inside the SV square
-    in.mouseX = content.x + 8 + 60; in.mouseY = pickerHeaderY + 28.0f + 20.0f;
+    float svX = innerContent.x + 8.0f, svY = pickerHeaderY + 28.0f + 6.0f;
+    in.mouseX = svX + 60; in.mouseY = svY + 20.0f;
     in.mousePressed = true;
     menu.Update(in, dt);
     in.mouseX += 10; in.mouseY -= 15;
@@ -144,27 +158,29 @@ int main() {
     in.mouseReleased = false;
     renderFrame("frame_05_colorpicker_dragged");
 
-    // Enable rainbow accent and step the hue cycler a few frames.
-    in.mouseX = 0; in.mouseY = 0; // move mouse away
+    // Enable rainbow accent - it sits right below the now-fully-open color
+    // picker (header 28px + open panel 120px + 6px gap below it).
+    in.mouseX = 0; in.mouseY = 0;
     menu.Update(in, dt);
-    // simulate clicking the rainbow checkbox directly via its own Update path
-    // (re-derive its row rect the same way the layout does it).
     {
-        Rect rainbowRect{content.x, pickerHeaderY + 28.0f + 96.0f, content.w, 28.0f};
-        in.mouseX = rainbowRect.x + 10; in.mouseY = rainbowRect.y + rainbowRect.h * 0.5f;
+        float rainbowY = pickerHeaderY + 28.0f + 120.0f + 6.0f;
+        in.mouseX = innerContent.x + 10.0f; in.mouseY = rainbowY + 14.0f;
         in.mousePressed = true;
         menu.Update(in, dt);
         in.mousePressed = false;
     }
-    for (int i = 0; i < 30; ++i) menu.Update(in, dt); // step hue cycler
+    for (int i = 0; i < 30; ++i) menu.Update(in, dt); // step the hue cycler
     renderFrame("frame_06_rainbow_accent");
+    menu.GetTheme().rainbowAccent = false;
+    rainbow.SetValue(false, true);
 
     // Hover the minimize button, then click it - shows the chrome button
-    // glow and the window collapsing down to just its title bar.
-    // Chrome buttons lay out right-to-left from the title bar's right edge:
-    // close (20px) is first, then a 6px gap, then minimize - this lands on
-    // minimize's center.
-    in.mouseX = 40 + 680 - 10 - 20 - 6 - 10; in.mouseY = 30 + 18;
+    // glow and the window collapsing down to just its title bar. Chrome
+    // buttons lay out right-to-left from the title bar's right edge:
+    // close (20px) first, then a 6px gap, then minimize.
+    float chromeY = titleBar.y + (kTitleH - 20.0f) * 0.5f + 10.0f;
+    float minimizeX = titleBar.x + titleBar.w - kPad - 20.0f - 6.0f - 10.0f;
+    in.mouseX = minimizeX; in.mouseY = chromeY;
     for (int i = 0; i < 8; ++i) menu.Update(in, dt);
     renderFrame("frame_07_minimize_hover");
 
@@ -174,11 +190,63 @@ int main() {
     for (int i = 0; i < 14; ++i) menu.Update(in, dt); // collapse animation plays
     renderFrame("frame_08_collapsed");
 
-    // Expand it back out for anyone poking at the remaining frames.
+    // Expand it back out.
     in.mousePressed = true;
     menu.Update(in, dt);
     in.mousePressed = false;
     for (int i = 0; i < 14; ++i) menu.Update(in, dt);
+    in.mouseX = 0; in.mouseY = 0;
+    menu.Update(in, dt);
+
+    // Switch a whole color theme with a real cross-fade - captured
+    // mid-transition, then settled.
+    menu.SetTheme(themes::Crimson());
+    for (int i = 0; i < 6; ++i) menu.Update(in, dt);
+    renderFrame("frame_09_theme_transition");
+    for (int i = 0; i < 20; ++i) menu.Update(in, dt);
+    renderFrame("frame_10_theme_settled");
+    menu.SetTheme(themes::Default(), false); // back to default, no transition needed for the remaining frames
+
+    // Back to the General tab to reach the FPS slider, then click its
+    // value box and type a new number.
+    in.mouseX = sidebar.x + 65; in.mouseY = sidebar.y + kTabRowH * 0.0f + 10.0f;
+    in.mousePressed = true;
+    menu.Update(in, dt);
+    in.mousePressed = false;
+    for (int i = 0; i < 16; ++i) menu.Update(in, dt);
+
+    float fpsY = innerContent.y + 22.0f + 6.0f    // GENERAL label
+                 + 28.0f + 6.0f                    // auto_save checkbox
+                 + 28.0f + 6.0f                    // auto_reconnect checkbox
+                 + 28.0f + 6.0f                    // notifications checkbox
+                 + 22.0f + 6.0f;                   // PERFORMANCE label
+    Rect fpsValueBox{innerContent.x + innerContent.w - 64.0f, fpsY, 60.0f, 16.0f};
+    in.mouseX = fpsValueBox.x + fpsValueBox.w * 0.5f; in.mouseY = fpsValueBox.y + fpsValueBox.h * 0.5f;
+    in.mousePressed = true;
+    menu.Update(in, dt); // click the value box - starts editing, buffer pre-filled with "144"
+    in.mousePressed = false;
+    menu.Update(in, dt);
+    renderFrame("frame_11_slider_edit_start");
+
+    in.backspace = true; menu.Update(in, dt); in.backspace = false; // clear the pre-filled "144"
+    menu.Update(in, dt);
+    in.backspace = true; menu.Update(in, dt); in.backspace = false;
+    menu.Update(in, dt);
+    in.backspace = true; menu.Update(in, dt); in.backspace = false;
+    for (char c : std::string("77")) {
+        in.textChar = c;
+        menu.Update(in, dt);
+        in.textChar = 0;
+    }
+    for (int i = 0; i < 6; ++i) menu.Update(in, dt); // cursor blink a couple times
+    renderFrame("frame_12_slider_edit_typing");
+
+    in.enterPressed = true;
+    menu.Update(in, dt);
+    in.enterPressed = false;
+    for (int i = 0; i < 10; ++i) menu.Update(in, dt); // thumb glides to the new value
+    renderFrame("frame_13_slider_edit_committed");
+    std::cout << "[demo] fps slider value after typed edit: " << fpsSlider.Value() << "\n";
 
     // Persist and reload a config profile to prove the config system round-trips.
     menu.SaveProfile(kOutDir + "/profiles", "default");

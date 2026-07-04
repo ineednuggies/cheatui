@@ -75,21 +75,49 @@ void Canvas::PlotCoverage(int x, int y, Color c, float coverage) {
     PlotBlend(x, y, soft);
 }
 
-float Canvas::RoundedRectCoverage(float lx, float ly, float w, float h, float r) {
-    float dx = 0.0f, dy = 0.0f;
+float Canvas::RoundedRectCoverage(float lx, float ly, float w, float h, Corners r) {
+    float radius = 0.0f, dx = 0.0f, dy = 0.0f;
     bool inCorner = true;
-    if (lx < r && ly < r)            { dx = r - lx;       dy = r - ly; }
-    else if (lx > w - r && ly < r)   { dx = lx - (w - r);  dy = r - ly; }
-    else if (lx < r && ly > h - r)   { dx = r - lx;        dy = ly - (h - r); }
-    else if (lx > w - r && ly > h - r) { dx = lx - (w - r); dy = ly - (h - r); }
+    if (lx < r.tl && ly < r.tl)                    { radius = r.tl; dx = r.tl - lx;       dy = r.tl - ly; }
+    else if (lx > w - r.tr && ly < r.tr)            { radius = r.tr; dx = lx - (w - r.tr); dy = r.tr - ly; }
+    else if (lx > w - r.br && ly > h - r.br)        { radius = r.br; dx = lx - (w - r.br); dy = ly - (h - r.br); }
+    else if (lx < r.bl && ly > h - r.bl)            { radius = r.bl; dx = r.bl - lx;       dy = ly - (h - r.bl); }
     else inCorner = false;
 
-    if (!inCorner) return 1.0f;
+    if (!inCorner || radius <= 0.0f) return inCorner ? 0.0f : 1.0f;
     float dist = std::sqrt(dx * dx + dy * dy);
     // Fully opaque half a pixel inside the arc, fully transparent half a
     // pixel outside it, smooth in between - a soft-edged corner instead of
     // a staircase of square pixels.
-    return std::clamp(r - dist + 0.5f, 0.0f, 1.0f);
+    return std::clamp(radius - dist + 0.5f, 0.0f, 1.0f);
+}
+
+void Canvas::FillRoundedRectExImpl(float x, float y, float w, float h, Corners r,
+                                    Color top, Color bottom, bool gradient) {
+    float maxR = std::min(w, h) * 0.5f;
+    r.tl = std::min(r.tl, maxR); r.tr = std::min(r.tr, maxR);
+    r.br = std::min(r.br, maxR); r.bl = std::min(r.bl, maxR);
+
+    int x0 = static_cast<int>(std::floor(x));
+    int y0 = static_cast<int>(std::floor(y));
+    int x1 = static_cast<int>(std::ceil(x + w));
+    int y1 = static_cast<int>(std::ceil(y + h));
+    for (int yy = y0; yy < y1; ++yy) {
+        float py = yy + 0.5f;
+        float covY = AxisCoverage(static_cast<float>(yy), y, y + h);
+        if (covY <= 0.0f) continue;
+        Color rowColor = top;
+        if (gradient) {
+            float t = h > 0.0f ? std::clamp((py - y) / h, 0.0f, 1.0f) : 0.0f;
+            rowColor = Color::Lerp(top, bottom, t);
+        }
+        for (int xx = x0; xx < x1; ++xx) {
+            float px = xx + 0.5f;
+            float covX = AxisCoverage(static_cast<float>(xx), x, x + w);
+            float corner = RoundedRectCoverage(px - x, py - y, w, h, r);
+            PlotCoverage(xx, yy, rowColor, covX * covY * corner);
+        }
+    }
 }
 
 void Canvas::FillRect(float x, float y, float w, float h, Color c) {
@@ -108,44 +136,21 @@ void Canvas::FillRect(float x, float y, float w, float h, Color c) {
 }
 
 void Canvas::FillRoundedRect(float x, float y, float w, float h, float radius, Color c) {
-    radius = std::min(radius, std::min(w, h) * 0.5f);
-    int x0 = static_cast<int>(std::floor(x));
-    int y0 = static_cast<int>(std::floor(y));
-    int x1 = static_cast<int>(std::ceil(x + w));
-    int y1 = static_cast<int>(std::ceil(y + h));
-    for (int yy = y0; yy < y1; ++yy) {
-        float py = yy + 0.5f;
-        float covY = AxisCoverage(static_cast<float>(yy), y, y + h);
-        if (covY <= 0.0f) continue;
-        for (int xx = x0; xx < x1; ++xx) {
-            float px = xx + 0.5f;
-            float covX = AxisCoverage(static_cast<float>(xx), x, x + w);
-            float corner = RoundedRectCoverage(px - x, py - y, w, h, radius);
-            PlotCoverage(xx, yy, c, covX * covY * corner);
-        }
-    }
+    FillRoundedRectExImpl(x, y, w, h, Corners(radius), c, c, false);
 }
 
 void Canvas::FillRoundedRectGradient(float x, float y, float w, float h, float radius,
                                       Color top, Color bottom) {
-    radius = std::min(radius, std::min(w, h) * 0.5f);
-    int x0 = static_cast<int>(std::floor(x));
-    int y0 = static_cast<int>(std::floor(y));
-    int x1 = static_cast<int>(std::ceil(x + w));
-    int y1 = static_cast<int>(std::ceil(y + h));
-    for (int yy = y0; yy < y1; ++yy) {
-        float py = yy + 0.5f;
-        float covY = AxisCoverage(static_cast<float>(yy), y, y + h);
-        if (covY <= 0.0f) continue;
-        float t = h > 0.0f ? std::clamp((py - y) / h, 0.0f, 1.0f) : 0.0f;
-        Color rowColor = Color::Lerp(top, bottom, t);
-        for (int xx = x0; xx < x1; ++xx) {
-            float px = xx + 0.5f;
-            float covX = AxisCoverage(static_cast<float>(xx), x, x + w);
-            float corner = RoundedRectCoverage(px - x, py - y, w, h, radius);
-            PlotCoverage(xx, yy, rowColor, covX * covY * corner);
-        }
-    }
+    FillRoundedRectExImpl(x, y, w, h, Corners(radius), top, bottom, true);
+}
+
+void Canvas::FillRoundedRectEx(float x, float y, float w, float h, Corners r, Color c) {
+    FillRoundedRectExImpl(x, y, w, h, r, c, c, false);
+}
+
+void Canvas::FillRoundedRectExGradient(float x, float y, float w, float h, Corners r,
+                                        Color top, Color bottom) {
+    FillRoundedRectExImpl(x, y, w, h, r, top, bottom, true);
 }
 
 void Canvas::StrokeRect(float x, float y, float w, float h, Color c, float thickness) {
@@ -183,26 +188,24 @@ void Canvas::Line(float x0, float y0, float x1, float y1, Color c, float thickne
 }
 
 void Canvas::Text(float x, float y, const std::string& text, Color c, float scale) {
-    const auto& table = font5x7::Table();
+    const auto& table = strokefont::Table();
     float penX = x;
-    // Each "on" glyph pixel is drawn as a slightly rounded square rather
-    // than a hard square - it keeps the font readable at small sizes but
-    // reads as a soft rounded typeface instead of raw 90s pixel art.
-    float pixelRadius = scale * 0.3f;
+    float thickness = std::max(1.0f, scale * 0.85f);
     for (char ch : text) {
         char key = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
         auto it = table.find(key);
         if (it == table.end()) it = table.find(' ');
         const auto& glyph = it->second;
-        for (int row = 0; row < 7; ++row) {
-            uint8_t bits = glyph.rows[row];
-            for (int col = 0; col < 5; ++col) {
-                if (bits & (1 << (4 - col))) {
-                    FillRoundedRect(penX + col * scale, y + row * scale, scale, scale, pixelRadius, c);
-                }
+        for (const auto& stroke : glyph) {
+            for (size_t i = 0; i + 1 < stroke.size(); ++i) {
+                float x0 = penX + stroke[i].x * scale;
+                float y0 = y + stroke[i].y * scale;
+                float x1 = penX + stroke[i + 1].x * scale;
+                float y1 = y + stroke[i + 1].y * scale;
+                Line(x0, y0, x1, y1, c, thickness);
             }
         }
-        penX += 6 * scale; // 5 px glyph + 1 px spacing
+        penX += 6 * scale; // 5-unit glyph + 1-unit spacing
     }
 }
 

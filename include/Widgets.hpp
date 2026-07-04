@@ -78,7 +78,13 @@ private:
     mutable AnimatedFloat thumbGlow_{0.0f, 0.15f};
     std::function<void(float)> onChange_;
 
+    // Click the value text to type a number directly instead of dragging.
+    bool editing_ = false;
+    std::string editBuffer_;
+    mutable Oscillator cursorBlink_{1.2f};
+
     float SnapToStep(float v) const;
+    void CommitEdit();
 };
 
 // Compact "value with - / + buttons" control. Handy for small integer
